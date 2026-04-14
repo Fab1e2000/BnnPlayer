@@ -14,7 +14,6 @@ struct Track: Identifiable, Hashable, Sendable {
     let title: String
     let artist: String?
     let album: String?
-    let albumID: String?
     let trackNumber: Int?
     let discNumber: Int?
     let artworkURL: URL?

@@ -12,7 +12,7 @@ struct LibraryScannerService: Sendable {
     func scan(folders: [LibraryFolder]) -> (albums: [Album], tracksByAlbum: [String: [Track]], summary: ScanSummary) {
         var summary = ScanSummary.empty
         var groupedTracks: [AlbumGroupKey: [Track]] = [:]
-        var groupedAlbumArtists: [AlbumGroupKey: [String]] = [:]
+        var groupedAlbumArtistCounts: [AlbumGroupKey: [String: Int]] = [:]
         var artworkFolderCache: [URL: Bool] = [:]
 
         for folder in folders {
@@ -27,43 +27,46 @@ struct LibraryScannerService: Sendable {
             }
 
             for case let fileURL as URL in enumerator {
-                guard
-                    let values = try? fileURL.resourceValues(forKeys: [.isRegularFileKey]),
-                    values.isRegularFile == true
-                else {
-                    continue
+                autoreleasepool {
+                    guard
+                        let values = try? fileURL.resourceValues(forKeys: [.isRegularFileKey]),
+                        values.isRegularFile == true
+                    else {
+                        return
+                    }
+
+                    let ext = fileURL.pathExtension.lowercased()
+                    guard supportedExtensions.contains(ext) else {
+                        return
+                    }
+
+                    summary.totalFiles += 1
+
+                    let metadata = metadataService.readMetadata(for: fileURL)
+                    let albumFolder = resolveAlbumFolder(for: fileURL, libraryRoot: folder.folderURL, artworkFolderCache: &artworkFolderCache)
+                    let groupKey = AlbumGroupKey(folderURL: albumFolder.standardizedFileURL)
+
+                    let track = Track(
+                        id: fileURL.path,
+                        fileURL: fileURL,
+                        title: metadata.title,
+                        artist: metadata.artist,
+                        album: metadata.album,
+                        trackNumber: metadata.trackNumber,
+                        discNumber: metadata.discNumber,
+                        artworkURL: metadata.artworkURL,
+                        duration: metadata.duration,
+                        format: metadata.format
+                    )
+
+                    groupedTracks[groupKey, default: []].append(track)
+                    if let albumArtist = metadata.albumArtist?.trimmingCharacters(in: .whitespacesAndNewlines), !albumArtist.isEmpty {
+                        var counts = groupedAlbumArtistCounts[groupKey] ?? [:]
+                        counts[albumArtist, default: 0] += 1
+                        groupedAlbumArtistCounts[groupKey] = counts
+                    }
+                    summary.playableFiles += 1
                 }
-
-                let ext = fileURL.pathExtension.lowercased()
-                guard supportedExtensions.contains(ext) else {
-                    continue
-                }
-
-                summary.totalFiles += 1
-
-                let metadata = metadataService.readMetadata(for: fileURL)
-                let albumFolder = resolveAlbumFolder(for: fileURL, libraryRoot: folder.folderURL, artworkFolderCache: &artworkFolderCache)
-                let groupKey = AlbumGroupKey(folderURL: albumFolder.standardizedFileURL)
-
-                let track = Track(
-                    id: fileURL.path,
-                    fileURL: fileURL,
-                    title: metadata.title,
-                    artist: metadata.artist,
-                    album: metadata.album,
-                    albumID: nil,
-                    trackNumber: metadata.trackNumber,
-                    discNumber: metadata.discNumber,
-                    artworkURL: metadata.artworkURL,
-                    duration: metadata.duration,
-                    format: metadata.format
-                )
-
-                groupedTracks[groupKey, default: []].append(track)
-                if let albumArtist = metadata.albumArtist?.trimmingCharacters(in: .whitespacesAndNewlines), !albumArtist.isEmpty {
-                    groupedAlbumArtists[groupKey, default: []].append(albumArtist)
-                }
-                summary.playableFiles += 1
             }
         }
 
@@ -72,29 +75,13 @@ struct LibraryScannerService: Sendable {
 
         for (key, rawTracks) in groupedTracks {
             let albumTitle = preferredValue(from: rawTracks.compactMap(\.album), fallback: key.folderURL.lastPathComponent)
-            let explicitAlbumArtists = groupedAlbumArtists[key] ?? []
-            let albumArtist = preferredOptionalValue(from: explicitAlbumArtists)
+            let explicitAlbumArtistCounts = groupedAlbumArtistCounts[key] ?? [:]
+            let albumArtist = preferredOptionalValue(fromCounts: explicitAlbumArtistCounts)
                 ?? preferredOptionalValue(from: rawTracks.compactMap(\.artist))
             let albumID = makeAlbumID(folderURL: key.folderURL, title: albumTitle)
             let coverURL = detectCover(in: key.folderURL, tracks: rawTracks)
 
-            let sortedTracks = rawTracks
-                .map {
-                    Track(
-                        id: $0.id,
-                        fileURL: $0.fileURL,
-                        title: $0.title,
-                        artist: $0.artist,
-                        album: $0.album,
-                        albumID: albumID,
-                        trackNumber: $0.trackNumber,
-                        discNumber: $0.discNumber,
-                        artworkURL: $0.artworkURL,
-                        duration: $0.duration,
-                        format: $0.format
-                    )
-                }
-                .sorted(by: trackSort)
+            let sortedTracks = rawTracks.sorted(by: trackSort)
 
             let album = Album(
                 id: albumID,
@@ -255,6 +242,19 @@ struct LibraryScannerService: Sendable {
 
         var counts: [String: Int] = [:]
         normalized.forEach { counts[$0, default: 0] += 1 }
+        return counts.max { lhs, rhs in
+            if lhs.value != rhs.value {
+                return lhs.value < rhs.value
+            }
+            return lhs.key.localizedCaseInsensitiveCompare(rhs.key) == .orderedDescending
+        }?.key
+    }
+
+    private func preferredOptionalValue(fromCounts counts: [String: Int]) -> String? {
+        guard !counts.isEmpty else {
+            return nil
+        }
+
         return counts.max { lhs, rhs in
             if lhs.value != rhs.value {
                 return lhs.value < rhs.value

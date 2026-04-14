@@ -4,6 +4,16 @@ final class LibraryStore {
     private let defaults: UserDefaults
     private let foldersKey = "banana_player.library_folders"
     private let cacheKey = "banana_player.library_cache"
+    private let cacheFileName = "library-cache.json"
+
+    private lazy var cacheFileURL: URL = {
+        let fileManager = FileManager.default
+        let baseDirectory = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+        let appDirectory = baseDirectory.appendingPathComponent("BananaPlayer", isDirectory: true)
+        try? fileManager.createDirectory(at: appDirectory, withIntermediateDirectories: true)
+        return appDirectory.appendingPathComponent(cacheFileName, isDirectory: false)
+    }()
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -30,7 +40,7 @@ final class LibraryStore {
     }
 
     func loadLibraryCache() -> (albums: [Album], tracksByAlbum: [String: [Track]])? {
-        guard let data = defaults.data(forKey: cacheKey) else {
+        guard let (data, source) = loadLibraryCacheData() else {
             return nil
         }
 
@@ -38,6 +48,12 @@ final class LibraryStore {
             let payload = try JSONDecoder().decode(LibraryCachePayload.self, from: data)
             let albums = payload.albums.map { $0.toEntity() }
             let tracksByAlbum = payload.tracksByAlbum.mapValues { records in records.map { $0.toEntity() } }
+
+            if source == .legacyDefaults {
+                writeLibraryCacheData(data)
+                defaults.removeObject(forKey: cacheKey)
+            }
+
             return (albums, tracksByAlbum)
         } catch {
             return nil
@@ -54,12 +70,34 @@ final class LibraryStore {
             return
         }
 
-        defaults.set(data, forKey: cacheKey)
+        writeLibraryCacheData(data)
     }
 
     func clearLibraryCache() {
         defaults.removeObject(forKey: cacheKey)
+        try? FileManager.default.removeItem(at: cacheFileURL)
     }
+
+    private func loadLibraryCacheData() -> (Data, CacheDataSource)? {
+        if let fileData = try? Data(contentsOf: cacheFileURL), !fileData.isEmpty {
+            return (fileData, .file)
+        }
+
+        if let defaultsData = defaults.data(forKey: cacheKey), !defaultsData.isEmpty {
+            return (defaultsData, .legacyDefaults)
+        }
+
+        return nil
+    }
+
+    private func writeLibraryCacheData(_ data: Data) {
+        try? data.write(to: cacheFileURL, options: .atomic)
+    }
+}
+
+private enum CacheDataSource {
+    case file
+    case legacyDefaults
 }
 
 private struct LibraryCachePayload: Codable {
@@ -99,7 +137,6 @@ private struct TrackCacheRecord: Codable {
     let title: String
     let artist: String?
     let album: String?
-    let albumID: String?
     let trackNumber: Int?
     let discNumber: Int?
     let artworkURL: URL?
@@ -112,7 +149,6 @@ private struct TrackCacheRecord: Codable {
         title = track.title
         artist = track.artist
         album = track.album
-        albumID = track.albumID
         trackNumber = track.trackNumber
         discNumber = track.discNumber
         artworkURL = track.artworkURL
@@ -127,7 +163,6 @@ private struct TrackCacheRecord: Codable {
             title: title,
             artist: artist,
             album: album,
-            albumID: albumID,
             trackNumber: trackNumber,
             discNumber: discNumber,
             artworkURL: artworkURL,

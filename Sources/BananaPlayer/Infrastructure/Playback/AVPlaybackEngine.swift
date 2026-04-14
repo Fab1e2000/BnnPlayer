@@ -4,7 +4,7 @@ import Foundation
 @MainActor
 final class AVPlaybackEngine: NSObject, PlaybackControlling {
     private var player: AVAudioPlayer?
-    private var queue: [Track] = []
+    private var queue: [PlaybackQueueEntry] = []
     private var currentIndex: Int?
     private var progressTimer: Timer?
 
@@ -33,8 +33,8 @@ final class AVPlaybackEngine: NSObject, PlaybackControlling {
     }
 
     func play(track: Track, queue: [Track]) {
-        self.queue = queue
-        currentIndex = queue.firstIndex(where: { $0.id == track.id })
+        self.queue = queue.map(PlaybackQueueEntry.init)
+        currentIndex = self.queue.firstIndex(where: { $0.id == track.id })
         startCurrentTrack()
     }
 
@@ -100,17 +100,17 @@ final class AVPlaybackEngine: NSObject, PlaybackControlling {
             return
         }
 
-        let track = queue[currentIndex]
-        currentTrack = track
+        let entry = queue[currentIndex]
+        currentTrack = entry.toTrack()
 
         do {
-            player = try AVAudioPlayer(contentsOf: track.fileURL)
+            player = try AVAudioPlayer(contentsOf: entry.fileURL)
             player?.delegate = self
             player?.volume = playbackState.volume
             player?.prepareToPlay()
             player?.play()
 
-            playbackState.currentTrackID = track.id
+            playbackState.currentTrackID = entry.id
             playbackState.isPlaying = true
             playbackState.progress = 0
 
@@ -158,5 +158,36 @@ extension AVPlaybackEngine: AVAudioPlayerDelegate {
         Task { @MainActor in
             playNext()
         }
+    }
+}
+
+private struct PlaybackQueueEntry {
+    let id: String
+    let fileURL: URL
+    let title: String
+    let duration: Double
+    let format: String
+
+    init(_ track: Track) {
+        id = track.id
+        fileURL = track.fileURL
+        title = track.title
+        duration = track.duration
+        format = track.format
+    }
+
+    func toTrack() -> Track {
+        Track(
+            id: id,
+            fileURL: fileURL,
+            title: title,
+            artist: nil,
+            album: nil,
+            trackNumber: nil,
+            discNumber: nil,
+            artworkURL: nil,
+            duration: duration,
+            format: format
+        )
     }
 }

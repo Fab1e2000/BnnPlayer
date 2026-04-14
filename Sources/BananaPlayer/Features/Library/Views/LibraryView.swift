@@ -1,6 +1,7 @@
 import SwiftUI
 #if os(macOS)
 import AppKit
+import ImageIO
 #endif
 
 struct LibraryView: View {
@@ -367,9 +368,12 @@ private struct AlbumArtworkView: View {
     let url: URL
 
     #if os(macOS)
+    private static let artworkThumbnailMaxPixelSize = 512
+
     private static let localArtworkCache: NSCache<NSURL, NSImage> = {
         let cache = NSCache<NSURL, NSImage>()
-        cache.countLimit = 300
+        cache.countLimit = 160
+        cache.totalCostLimit = 80 * 1024 * 1024
         return cache
     }()
     #endif
@@ -410,12 +414,49 @@ private struct AlbumArtworkView: View {
             return Image(nsImage: cachedImage)
         }
 
+        if let thumbnail = Self.loadThumbnailImage(from: url, maxPixelSize: Self.artworkThumbnailMaxPixelSize) {
+            Self.localArtworkCache.setObject(thumbnail.image, forKey: cacheKey, cost: thumbnail.cost)
+            return Image(nsImage: thumbnail.image)
+        }
+
         guard let loadedImage = NSImage(contentsOf: url) else {
             return nil
         }
 
-        Self.localArtworkCache.setObject(loadedImage, forKey: cacheKey)
+        Self.localArtworkCache.setObject(loadedImage, forKey: cacheKey, cost: Self.estimatedCost(for: loadedImage))
         return Image(nsImage: loadedImage)
+    }
+
+    private static func loadThumbnailImage(from url: URL, maxPixelSize: Int) -> (image: NSImage, cost: Int)? {
+        guard
+            let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+            let cgImage = CGImageSourceCreateThumbnailAtIndex(
+                source,
+                0,
+                [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceCreateThumbnailWithTransform: true,
+                    kCGImageSourceShouldCacheImmediately: true,
+                    kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
+                ] as CFDictionary
+            )
+        else {
+            return nil
+        }
+
+        let image = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+        let cost = max(1, cgImage.width * cgImage.height * 4)
+        return (image, cost)
+    }
+
+    private static func estimatedCost(for image: NSImage) -> Int {
+        guard let representation = image.representations.first else {
+            return 1
+        }
+
+        let width = max(1, representation.pixelsWide)
+        let height = max(1, representation.pixelsHigh)
+        return width * height * 4
     }
     #else
     private var localArtwork: Image? {

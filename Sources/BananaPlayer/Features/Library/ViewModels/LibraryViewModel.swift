@@ -12,7 +12,6 @@ final class LibraryViewModel: ObservableObject {
     @Published var errorMessage: String?
 
     private var normalizedAlbumSearchTextByID: [String: String] = [:]
-    private var normalizedTrackTitlesByAlbumID: [String: [String]] = [:]
 
     private let repository: any MusicRepositoryProtocol
     private let playerViewModel: PlayerViewModel
@@ -90,7 +89,9 @@ final class LibraryViewModel: ObservableObject {
         return albums.filter { album in
             let albumMatch = normalizedAlbumSearchTextByID[album.id]?.contains(keyword) ?? false
 
-            let trackMatch = normalizedTrackTitlesByAlbumID[album.id]?.contains(where: { $0.contains(keyword) }) ?? false
+            let trackMatch = (repository.tracksByAlbum[album.id] ?? []).contains {
+                $0.title.localizedCaseInsensitiveContains(keyword)
+            }
 
             return albumMatch || trackMatch
         }
@@ -104,15 +105,7 @@ final class LibraryViewModel: ObservableObject {
             return tracks
         }
 
-        let normalizedTitles = normalizedTrackTitlesByAlbumID[album.id] ?? []
-        guard normalizedTitles.count == tracks.count else {
-            return tracks.filter { $0.title.lowercased().contains(keyword) }
-        }
-
-        return zip(tracks, normalizedTitles)
-            .compactMap { track, normalizedTitle in
-                normalizedTitle.contains(keyword) ? track : nil
-            }
+        return tracks.filter { $0.title.localizedCaseInsensitiveContains(keyword) }
     }
 
     func openAlbum(_ album: Album) {
@@ -151,9 +144,5 @@ final class LibraryViewModel: ObservableObject {
                 .lowercased()
             return (album.id, albumBlob)
         })
-
-        normalizedTrackTitlesByAlbumID = repository.tracksByAlbum.mapValues { tracks in
-            tracks.map { $0.title.lowercased() }
-        }
     }
 }
