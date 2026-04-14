@@ -23,7 +23,6 @@ final class LibraryViewModel: ObservableObject {
     }
 
     func bootstrap() {
-        selectedAlbumID = nil
         refreshData()
     }
 

@@ -351,7 +351,7 @@ private struct AlbumCardView: View {
                 .overlay {
                     RoundedRectangle(cornerRadius: 12)
                         .stroke(
-                            isKeyboardFocused ? Color.white : Color.clear,
+                            isKeyboardFocused ? Color.primary : Color.clear,
                             lineWidth: isKeyboardFocused ? 2 : 0
                         )
                 }
@@ -365,6 +365,14 @@ private struct AlbumCardView: View {
 
 private struct AlbumArtworkView: View {
     let url: URL
+
+    #if os(macOS)
+    private static let localArtworkCache: NSCache<NSURL, NSImage> = {
+        let cache = NSCache<NSURL, NSImage>()
+        cache.countLimit = 300
+        return cache
+    }()
+    #endif
 
     var body: some View {
         if url.isFileURL {
@@ -396,10 +404,18 @@ private struct AlbumArtworkView: View {
 
     #if os(macOS)
     private var localArtwork: Image? {
-        guard let nsImage = NSImage(contentsOf: url) else {
+        let cacheKey = url as NSURL
+
+        if let cachedImage = Self.localArtworkCache.object(forKey: cacheKey) {
+            return Image(nsImage: cachedImage)
+        }
+
+        guard let loadedImage = NSImage(contentsOf: url) else {
             return nil
         }
-        return Image(nsImage: nsImage)
+
+        Self.localArtworkCache.setObject(loadedImage, forKey: cacheKey)
+        return Image(nsImage: loadedImage)
     }
     #else
     private var localArtwork: Image? {
@@ -410,7 +426,7 @@ private struct AlbumArtworkView: View {
 
 private struct AlbumTracksView: View {
     private static let estimatedTrackRowHeight: CGFloat = 56
-    private static let bottomBarOcclusionHeight: CGFloat = 92
+    private static let bottomBarOcclusionHeight: CGFloat = 30
 
     let albums: [Album]
     let album: Album
@@ -794,11 +810,12 @@ private struct AlbumTracksView: View {
     private var albumSidebar: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(spacing: 12) {
+                LazyVStack(spacing: 18) {
                     ForEach(albums) { sideAlbum in
                         let isSelected = sideAlbum.id == album.id
                         let showSelectedAlbumBorder = keyboardSelectionMode == .album && isSelected
-                        let itemSize: CGFloat = isSelected ? 126 : 106
+                        let baseItemSize: CGFloat = 106
+                        let selectedScale: CGFloat = 126 / 106
 
                         Button {
                             keyboardSelectedAlbumID = sideAlbum.id
@@ -809,7 +826,7 @@ private struct AlbumTracksView: View {
                             RoundedRectangle(cornerRadius: 12)
                                 .fill(Color.secondary.opacity(0.12))
                                 .aspectRatio(1, contentMode: .fit)
-                                .frame(width: itemSize, height: itemSize)
+                                .frame(width: baseItemSize, height: baseItemSize)
                                     .matchedGeometryEffect(id: "album-cover-\(sideAlbum.id)", in: coverTransitionNamespace)
                                 .overlay {
                                     if let coverURL = sideAlbum.coverURL {
@@ -824,11 +841,13 @@ private struct AlbumTracksView: View {
                                 .overlay {
                                     RoundedRectangle(cornerRadius: 12)
                                         .stroke(
-                                            showSelectedAlbumBorder ? Color.white : Color.primary.opacity(0.08),
+                                            showSelectedAlbumBorder ? Color.primary : Color.primary.opacity(0.08),
                                             lineWidth: showSelectedAlbumBorder ? 2 : 1
                                         )
                                 }
+                                .scaleEffect(isSelected ? selectedScale : 1)
                                 .frame(maxWidth: .infinity)
+                                .zIndex(isSelected ? 1 : 0)
                                     .animation(albumSelectionAnimation, value: isSelected)
                         }
                         .buttonStyle(.plain)
@@ -839,7 +858,7 @@ private struct AlbumTracksView: View {
                 }
                 .padding(.horizontal, 12)
                 .padding(.top, 12)
-                .padding(.bottom, 0)
+                .padding(.bottom, Self.bottomBarOcclusionHeight)
             }
             .frame(width: 160)
             .frame(maxHeight: .infinity, alignment: .top)
