@@ -19,6 +19,7 @@ ZIP_PATH="$DIST_DIR/$APP_NAME-$VERSION-macos.zip"
 ICONSET_DIR="$DIST_DIR/AppIcon.iconset"
 ICON_SOURCE_PNG="$DIST_DIR/AppIcon-1024.png"
 ICON_FILE_NAME="AppIcon"
+ROOT_LOGO_PNG="$ROOT_DIR/logo.png"
 CUSTOM_ICON_PNG=""
 
 generate_music_icon_png() {
@@ -153,7 +154,11 @@ chmod +x "$MACOS_DIR/$APP_NAME"
 mkdir -p "$DIST_DIR"
 rm -rf "$ICONSET_DIR"
 
-CUSTOM_ICON_PNG="$(find "$DIST_DIR" -maxdepth 1 -type f \( -iname '*.png' -o -iname '*.PNG' \) ! -name 'AppIcon-1024.png' | head -n 1)"
+if [[ -f "$ROOT_LOGO_PNG" ]]; then
+  CUSTOM_ICON_PNG="$ROOT_LOGO_PNG"
+else
+  CUSTOM_ICON_PNG="$(find "$DIST_DIR" -maxdepth 1 -type f \( -iname '*.png' -o -iname '*.PNG' \) ! -name 'AppIcon-1024.png' | head -n 1)"
+fi
 
 if [[ -n "$CUSTOM_ICON_PNG" ]]; then
   printf "==> Using custom PNG app icon: %s\n" "$CUSTOM_ICON_PNG"

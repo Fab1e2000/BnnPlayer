@@ -42,7 +42,6 @@ struct LibraryView: View {
                         .transition(.asymmetric(insertion: .move(edge: .leading).combined(with: .opacity), removal: .move(edge: .leading).combined(with: .opacity)))
                 }
             }
-            .animation(sceneTransitionAnimation, value: viewModel.selectedAlbumID)
             .navigationTitle("Banana Player")
             .toolbar {
                 ToolbarItemGroup(placement: .primaryAction) {
@@ -468,6 +467,7 @@ private struct AlbumArtworkView: View {
 private struct AlbumTracksView: View {
     private static let estimatedTrackRowHeight: CGFloat = 56
     private static let bottomBarOcclusionHeight: CGFloat = 30
+    private static let trackListTopAnchorID = "track-list-top-anchor"
 
     let albums: [Album]
     let album: Album
@@ -532,58 +532,68 @@ private struct AlbumTracksView: View {
                 .padding(.bottom, 4)
 
                 ScrollViewReader { proxy in
-                    List(tracks) { track in
-                        let isHighlighted = keyboardSelectionMode == .track && track.id == highlightedTrackID
-                        let isPlayingTrack = track.id == currentTrackID
-                        let trackNumberText = track.trackNumber.map(String.init) ?? "-"
-                        let primaryColor: Color = isPlayingTrack ? .accentColor : .primary
-                        let secondaryColor: Color = isPlayingTrack ? .accentColor : .secondary
+                    ScrollView {
+                        LazyVStack(spacing: 6) {
+                            Color.clear
+                                .frame(height: 0)
+                                .id(Self.trackListTopAnchorID)
 
-                        HStack(spacing: 12) {
-                            Text(trackNumberText)
-                                .foregroundStyle(secondaryColor)
-                                .frame(width: 28, alignment: .trailing)
+                            ForEach(tracks) { track in
+                                let isHighlighted = keyboardSelectionMode == .track && track.id == highlightedTrackID
+                                let isPlayingTrack = track.id == currentTrackID
+                                let trackNumberText = track.trackNumber.map(String.init) ?? "-"
+                                let primaryColor: Color = isPlayingTrack ? .accentColor : .primary
+                                let secondaryColor: Color = isPlayingTrack ? .accentColor : .secondary
 
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(track.title)
-                                    .foregroundStyle(primaryColor)
-                                Text(track.format.uppercased())
-                                    .font(.caption)
-                                    .foregroundStyle(secondaryColor)
+                                HStack(spacing: 12) {
+                                    Text(trackNumberText)
+                                        .foregroundStyle(secondaryColor)
+                                        .frame(width: 28, alignment: .trailing)
+
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(track.title)
+                                            .foregroundStyle(primaryColor)
+                                        Text(track.format.uppercased())
+                                            .font(.caption)
+                                            .foregroundStyle(secondaryColor)
+                                    }
+
+                                    Spacer()
+
+                                    Text(durationText(track.duration))
+                                        .foregroundStyle(secondaryColor)
+                                        .font(.caption)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.vertical, 8)
+                                .padding(.horizontal, 12)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .fill(isHighlighted ? Color.accentColor.opacity(0.18) : .clear)
+                                )
+                                .contentShape(Rectangle())
+                                .hoverInteractive(brightness: 0.06)
+                                .onTapGesture {
+                                    setKeyboardSelectionMode(.track)
+                                    #if os(macOS)
+                                    if NSApp.currentEvent?.clickCount == 2 {
+                                        highlightedTrackID = nil
+                                        onPlayTrack(track)
+                                    } else {
+                                        highlightedTrackID = track.id
+                                    }
+                                    #else
+                                    highlightedTrackID = track.id
+                                    #endif
+                                }
+                                .id(track.id)
                             }
-
-                            Spacer()
-
-                            Text(durationText(track.duration))
-                                .foregroundStyle(secondaryColor)
-                                .font(.caption)
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
-                        .listRowBackground(
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(isHighlighted ? Color.accentColor.opacity(0.18) : .clear)
-                                .padding(.vertical, 2)
-                                .padding(.horizontal, 10)
-                        )
-                        .hoverInteractive(brightness: 0.06)
-                        .onTapGesture {
-                            setKeyboardSelectionMode(.track)
-                            #if os(macOS)
-                            if NSApp.currentEvent?.clickCount == 2 {
-                                highlightedTrackID = nil
-                                onPlayTrack(track)
-                            } else {
-                                highlightedTrackID = track.id
-                            }
-                            #else
-                            highlightedTrackID = track.id
-                            #endif
-                        }
-                        .id(track.id)
+                        .padding(.horizontal, 10)
+                        .padding(.top, 6)
+                        .padding(.bottom, Self.bottomBarOcclusionHeight)
                     }
                     .id(album.id)
-                    .listStyle(.inset)
                     .background(
                         GeometryReader { geometry in
                             Color.clear
@@ -601,6 +611,7 @@ private struct AlbumTracksView: View {
                     }
                     .onChange(of: album.id) { _ in
                         trackListTopVisibleIndex = 0
+                        pendingTrackScrollTargetID = nil
                         scrollTracksToTop(with: proxy)
                     }
                     .onChange(of: tracks.map(\.id)) { _ in
@@ -619,6 +630,7 @@ private struct AlbumTracksView: View {
                     }
                 }
             }
+            .compositingGroup()
         }
         .navigationTitle(album.title)
         .onAppear {
@@ -833,12 +845,11 @@ private struct AlbumTracksView: View {
     }
 
     private func scrollTracksToTop(with proxy: ScrollViewProxy) {
-        guard let firstTrackID = tracks.first?.id else {
-            return
-        }
-
         DispatchQueue.main.async {
-            proxy.scrollTo(firstTrackID, anchor: .top)
+            proxy.scrollTo(Self.trackListTopAnchorID, anchor: .top)
+            DispatchQueue.main.async {
+                proxy.scrollTo(Self.trackListTopAnchorID, anchor: .top)
+            }
         }
     }
 
