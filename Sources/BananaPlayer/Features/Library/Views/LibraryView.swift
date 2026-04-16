@@ -7,6 +7,7 @@ import ImageIO
 struct LibraryView: View {
     @ObservedObject var viewModel: LibraryViewModel
     @ObservedObject var playerViewModel: PlayerViewModel
+    @StateObject private var sceneTransitionController = SceneTransitionController()
     @State private var spaceKeyMonitor: Any?
     @State private var albumGridKeyMonitor: Any?
     @State private var keyboardFocusedAlbumID: String?
@@ -17,6 +18,7 @@ struct LibraryView: View {
     private let basePlayerBarHorizontalPadding: CGFloat = 16
     private let albumSidebarWidth: CGFloat = 160
     private let sceneTransitionAnimation = Animation.spring(response: 0.58, dampingFraction: 0.92, blendDuration: 0.2)
+    private let sceneTransitionSettlingDuration: TimeInterval = 0.72
     private let focusScrollAnimation = Animation.easeInOut(duration: 0.24)
 
     var body: some View {
@@ -29,6 +31,9 @@ struct LibraryView: View {
                         tracks: viewModel.tracks(for: album),
                         currentTrackID: playerViewModel.currentTrack?.id,
                         coverTransitionNamespace: albumCoverTransition,
+                        isSceneTransitioning: sceneTransitionController.isTransitioning,
+                        sceneTransitionGeneration: sceneTransitionController.currentGeneration,
+                        isCurrentSceneTransitionGeneration: sceneTransitionController.isCurrentGeneration,
                         onBack: closeAlbumWithTransition,
                         isSecondaryActive: { viewModel.selectedAlbumID != nil },
                         onSelectAlbum: viewModel.openAlbum,
@@ -39,6 +44,7 @@ struct LibraryView: View {
                     .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .move(edge: .trailing).combined(with: .opacity)))
                 } else {
                     albumGrid
+                        .allowsHitTesting(!sceneTransitionController.isTransitioning)
                         .transition(.asymmetric(insertion: .move(edge: .leading).combined(with: .opacity), removal: .move(edge: .leading).combined(with: .opacity)))
                 }
             }
@@ -103,6 +109,7 @@ struct LibraryView: View {
             refreshAlbumGridKeyMonitor()
         }
         .onDisappear {
+            sceneTransitionController.cancelPendingCompletion()
             removeSpaceKeyMonitorIfNeeded()
             removeAlbumGridKeyMonitorIfNeeded()
         }
@@ -162,7 +169,7 @@ struct LibraryView: View {
         }
 
         albumGridKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            guard viewModel.selectedAlbum == nil else {
+            guard viewModel.selectedAlbum == nil, !sceneTransitionController.isTransitioning else {
                 return event
             }
 
@@ -239,6 +246,7 @@ struct LibraryView: View {
     }
 
     private func openAlbumWithTransition(_ album: Album) {
+        beginSceneTransitionWindow()
         withAnimation(sceneTransitionAnimation) {
             viewModel.openAlbum(album)
         }
@@ -246,9 +254,14 @@ struct LibraryView: View {
 
     private func closeAlbumWithTransition() {
         keyboardFocusedAlbumID = viewModel.selectedAlbumID
+        beginSceneTransitionWindow()
         withAnimation(sceneTransitionAnimation) {
             viewModel.closeAlbum()
         }
+    }
+
+    private func beginSceneTransitionWindow() {
+        sceneTransitionController.begin(duration: sceneTransitionSettlingDuration)
     }
 
     private var albumGrid: some View {
@@ -282,7 +295,6 @@ struct LibraryView: View {
                                 let isKeyboardFocused = album.id == keyboardFocusedAlbumID
 
                                 Button {
-                                    keyboardFocusedAlbumID = album.id
                                     openAlbumWithTransition(album)
                                 } label: {
                                     AlbumCardView(
@@ -308,6 +320,7 @@ struct LibraryView: View {
                         guard let newValue else {
                             return
                         }
+
                         withAnimation(focusScrollAnimation) {
                             proxy.scrollTo(newValue, anchor: .center)
                         }
@@ -474,6 +487,9 @@ private struct AlbumTracksView: View {
     let tracks: [Track]
     let currentTrackID: String?
     let coverTransitionNamespace: Namespace.ID
+    let isSceneTransitioning: Bool
+    let sceneTransitionGeneration: Int
+    let isCurrentSceneTransitionGeneration: (Int) -> Bool
     let onBack: () -> Void
     let isSecondaryActive: () -> Bool
     let onSelectAlbum: (Album) -> Void
@@ -623,8 +639,12 @@ private struct AlbumTracksView: View {
                             return
                         }
 
-                        withAnimation(trackScrollAnimation) {
+                        if isSceneTransitioning {
                             proxy.scrollTo(targetID, anchor: .top)
+                        } else {
+                            withAnimation(trackScrollAnimation) {
+                                proxy.scrollTo(targetID, anchor: .top)
+                            }
                         }
                         pendingTrackScrollTargetID = nil
                     }
@@ -845,9 +865,16 @@ private struct AlbumTracksView: View {
     }
 
     private func scrollTracksToTop(with proxy: ScrollViewProxy) {
+        let generation = sceneTransitionGeneration
         DispatchQueue.main.async {
+            guard isCurrentSceneTransitionGeneration(generation) else {
+                return
+            }
             proxy.scrollTo(Self.trackListTopAnchorID, anchor: .top)
             DispatchQueue.main.async {
+                guard isCurrentSceneTransitionGeneration(generation) else {
+                    return
+                }
                 proxy.scrollTo(Self.trackListTopAnchorID, anchor: .top)
             }
         }
@@ -900,7 +927,6 @@ private struct AlbumTracksView: View {
                                 .scaleEffect(isSelected ? selectedScale : 1)
                                 .frame(maxWidth: .infinity)
                                 .zIndex(isSelected ? 1 : 0)
-                                    .animation(albumSelectionAnimation, value: isSelected)
                         }
                         .buttonStyle(.plain)
                         .hoverInteractive(brightness: 0.08, scale: 1.02)
@@ -920,8 +946,12 @@ private struct AlbumTracksView: View {
                 proxy.scrollTo(album.id, anchor: .center)
             }
             .onChange(of: album.id) { newValue in
-                withAnimation(trackScrollAnimation) {
+                if isSceneTransitioning {
                     proxy.scrollTo(newValue, anchor: .center)
+                } else {
+                    withAnimation(trackScrollAnimation) {
+                        proxy.scrollTo(newValue, anchor: .center)
+                    }
                 }
             }
         }
@@ -938,6 +968,43 @@ private struct AlbumTracksView: View {
         }
 
         return String(format: "%02d:%02d", minutes, secs)
+    }
+}
+
+@MainActor
+private final class SceneTransitionController: ObservableObject {
+    @Published private(set) var isTransitioning = false
+
+    private(set) var currentGeneration = 0
+    private var pendingCompletionWorkItem: DispatchWorkItem?
+
+    func begin(duration: TimeInterval) {
+        currentGeneration += 1
+        isTransitioning = true
+
+        pendingCompletionWorkItem?.cancel()
+
+        let generation = currentGeneration
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self, self.currentGeneration == generation else {
+                return
+            }
+            self.isTransitioning = false
+            self.pendingCompletionWorkItem = nil
+        }
+
+        pendingCompletionWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration, execute: workItem)
+    }
+
+    func cancelPendingCompletion() {
+        pendingCompletionWorkItem?.cancel()
+        pendingCompletionWorkItem = nil
+        isTransitioning = false
+    }
+
+    func isCurrentGeneration(_ generation: Int) -> Bool {
+        currentGeneration == generation
     }
 }
 
