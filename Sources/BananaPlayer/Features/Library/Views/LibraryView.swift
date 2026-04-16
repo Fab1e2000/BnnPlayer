@@ -183,16 +183,40 @@ struct LibraryView: View {
             case 123:
                 moveAlbumGridFocus(step: -1)
                 return nil
+            case 0:
+                moveAlbumGridFocus(step: -1)
+                return nil
+            case 38:
+                moveAlbumGridFocus(step: -1)
+                return nil
             case 124:
+                moveAlbumGridFocus(step: 1)
+                return nil
+            case 2:
+                moveAlbumGridFocus(step: 1)
+                return nil
+            case 37:
                 moveAlbumGridFocus(step: 1)
                 return nil
             case 126:
                 moveAlbumGridFocus(step: -max(albumGridColumnCount, 1))
                 return nil
+            case 13:
+                moveAlbumGridFocus(step: -max(albumGridColumnCount, 1))
+                return nil
+            case 34:
+                moveAlbumGridFocus(step: -max(albumGridColumnCount, 1))
+                return nil
             case 125:
                 moveAlbumGridFocus(step: max(albumGridColumnCount, 1))
                 return nil
-            case 36, 76:
+            case 1:
+                moveAlbumGridFocus(step: max(albumGridColumnCount, 1))
+                return nil
+            case 40:
+                moveAlbumGridFocus(step: max(albumGridColumnCount, 1))
+                return nil
+            case 36, 76, 14, 31:
                 openFocusedAlbumFromKeyboard()
                 return nil
             default:
@@ -703,10 +727,38 @@ private struct AlbumTracksView: View {
                 setKeyboardSelectionMode(.track)
                 ensureTrackSelectionSeeded()
                 return nil
+            case 2:
+                setKeyboardSelectionMode(.track)
+                ensureTrackSelectionSeeded()
+                return nil
+            case 37:
+                setKeyboardSelectionMode(.track)
+                ensureTrackSelectionSeeded()
+                return nil
             case 123:
                 setKeyboardSelectionMode(.album)
                 return nil
+            case 0:
+                setKeyboardSelectionMode(.album)
+                return nil
+            case 38:
+                setKeyboardSelectionMode(.album)
+                return nil
             case 126:
+                if keyboardSelectionMode == .track {
+                    selectAdjacentTrack(step: -1)
+                } else {
+                    selectAdjacentAlbum(step: -1)
+                }
+                return nil
+            case 13:
+                if keyboardSelectionMode == .track {
+                    selectAdjacentTrack(step: -1)
+                } else {
+                    selectAdjacentAlbum(step: -1)
+                }
+                return nil
+            case 34:
                 if keyboardSelectionMode == .track {
                     selectAdjacentTrack(step: -1)
                 } else {
@@ -720,13 +772,27 @@ private struct AlbumTracksView: View {
                     selectAdjacentAlbum(step: 1)
                 }
                 return nil
-            case 36, 76:
+            case 1:
+                if keyboardSelectionMode == .track {
+                    selectAdjacentTrack(step: 1)
+                } else {
+                    selectAdjacentAlbum(step: 1)
+                }
+                return nil
+            case 40:
+                if keyboardSelectionMode == .track {
+                    selectAdjacentTrack(step: 1)
+                } else {
+                    selectAdjacentAlbum(step: 1)
+                }
+                return nil
+            case 36, 76, 14, 31:
                 if keyboardSelectionMode == .track {
                     playHighlightedTrack()
                     return nil
                 }
                 return event
-            case 53:
+            case 53, 12, 32:
                 onBack()
                 return nil
             default:
