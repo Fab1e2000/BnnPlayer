@@ -6,6 +6,8 @@ final class AppContainer: ObservableObject {
     let playbackEngine: AVPlaybackEngine
     let playerViewModel: PlayerViewModel
     let libraryViewModel: LibraryViewModel
+    let lyricsOverlayViewModel: LyricsOverlayViewModel
+    let lyricsStatusBarController: LyricsStatusBarController
 
     init() {
         let metadataService = MetadataService()
@@ -16,5 +18,7 @@ final class AppContainer: ObservableObject {
         playbackEngine = AVPlaybackEngine()
         playerViewModel = PlayerViewModel(controller: playbackEngine)
         libraryViewModel = LibraryViewModel(repository: repository, playerViewModel: playerViewModel)
+        lyricsOverlayViewModel = LyricsOverlayViewModel(playerViewModel: playerViewModel, repository: repository)
+        lyricsStatusBarController = LyricsStatusBarController(viewModel: lyricsOverlayViewModel)
     }
 }

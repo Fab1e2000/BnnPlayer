@@ -388,7 +388,7 @@ private struct AlbumCardView: View {
                 .overlay {
                     RoundedRectangle(cornerRadius: 12)
                         .stroke(
-                            isKeyboardFocused ? Color.primary : Color.clear,
+                            isKeyboardFocused ? Color.blue : Color.clear,
                             lineWidth: isKeyboardFocused ? 2 : 0
                         )
                 }
@@ -573,7 +573,7 @@ private struct AlbumTracksView: View {
 
                 ScrollViewReader { proxy in
                     ScrollView {
-                        LazyVStack(spacing: 6) {
+                        LazyVStack(alignment: .leading, spacing: 6) {
                             Color.clear
                                 .frame(height: 0)
                                 .id(Self.trackListTopAnchorID)
@@ -604,6 +604,7 @@ private struct AlbumTracksView: View {
                                         .foregroundStyle(secondaryColor)
                                         .font(.caption)
                                 }
+                                .fixedSize(horizontal: false, vertical: true)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.vertical, 8)
                                 .padding(.horizontal, 12)
@@ -629,6 +630,7 @@ private struct AlbumTracksView: View {
                                 .id(track.id)
                             }
                         }
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
                         .padding(.horizontal, 10)
                         .padding(.top, 6)
                         .padding(.bottom, Self.bottomBarOcclusionHeight)
@@ -986,7 +988,7 @@ private struct AlbumTracksView: View {
                                 .overlay {
                                     RoundedRectangle(cornerRadius: 12)
                                         .stroke(
-                                            showSelectedAlbumBorder ? Color.primary : Color.primary.opacity(0.08),
+                                            showSelectedAlbumBorder ? Color.blue : Color.primary.opacity(0.08),
                                             lineWidth: showSelectedAlbumBorder ? 2 : 1
                                         )
                                 }
